@@ -1,0 +1,572 @@
+openapi: 3.0.3
+info:
+  title: SaaS-O-Matic Billing & Subscription Optimizer API
+  version: 1.0.0
+  description: |
+    REST API for managing corporate SaaS customers, validating tax IDs (including strict
+    Spanish DNI/NIE/CIF checksum verification), and calculating/persisting multi-tier
+    subscription cost simulations in canonical EUR.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local FastAPI development server
+
+tags:
+  - name: System
+    description: Health and reference metadata endpoints
+  - name: Customers
+    description: Corporate customer registration and lookup
+  - name: Simulations
+    description: SaaS usage billing simulations and history
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      description: Verifies API liveness and SQLite database connectivity.
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /countries:
+    get:
+      tags: [System]
+      summary: List supported countries and tax rates
+      description: Returns the catalog of supported ISO 3166-1 alpha-2 country codes, display names, and VAT/Tax percentages.
+      operationId: listCountries
+      responses:
+        '200':
+          description: Supported country tax catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CountryInfo'
+
+  /plans:
+    get:
+      tags: [System]
+      summary: List subscription plans and thresholds
+      description: Returns available subscription plans with fixed monthly EUR price and included storage/API thresholds.
+      operationId: listPlans
+      responses:
+        '200':
+          description: Subscription plan catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlanInfo'
+
+  /customers:
+    get:
+      tags: [Customers]
+      summary: Search and list corporate customers
+      description: Searches customers by partial case-insensitive match on `company_name` or normalized `tax_id`. Returns paginated results ordered by `created_at DESC`.
+      operationId: listCustomers
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Search term matched against company_name or tax_id.
+          schema:
+            type: string
+            maxLength: 150
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Paginated list of customers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerListResponse'
+
+    post:
+      tags: [Customers]
+      summary: Register a corporate customer
+      description: |
+        Creates a new corporate customer. Normalizes `tax_id` (uppercase, no spaces/hyphens/dots)
+        and enforces strict DNI/NIE/CIF algorithmic validation when `country_code == "ES"`.
+      operationId: createCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerCreateRequest'
+            examples:
+              spanishCorporate:
+                summary: Spanish corporate client with valid CIF
+                value:
+                  company_name: Acme Iberia S.L.
+                  tax_id: B-58818501
+                  contact_email: billing@acme.es
+                  country_code: ES
+                  plan: STARTER
+                  overage_policy: PROGRESSIVE
+      responses:
+        '201':
+          description: Customer created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '409':
+          description: Duplicate customer for the same (country_code, tax_id)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error (e.g., invalid Spanish DNI/NIE/CIF, unsupported country, invalid email)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidSpanishTaxId:
+                  summary: Invalid Spanish CIF checksum
+                  value:
+                    code: INVALID_SPANISH_TAX_ID
+                    message: El identificador fiscal español (DNI/NIE/CIF) no supera la validación oficial de control.
+                    details:
+                      field: tax_id
+                      country_code: ES
+
+  /customers/{customer_id}:
+    get:
+      tags: [Customers]
+      summary: Get corporate customer details
+      operationId: getCustomerById
+      parameters:
+        - $ref: '#/components/parameters/CustomerIdPath'
+      responses:
+        '200':
+          description: Corporate customer found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '404':
+          description: Customer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /customers/{customer_id}/simulations:
+    get:
+      tags: [Simulations]
+      summary: List saved cost simulations for a customer
+      description: Returns chronological history (`created_at DESC`) of persisted simulations for the given customer.
+      operationId: listCustomerSimulations
+      parameters:
+        - $ref: '#/components/parameters/CustomerIdPath'
+      responses:
+        '200':
+          description: List of saved simulations for the customer
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SimulationResponse'
+        '404':
+          description: Customer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /simulations:
+    post:
+      tags: [Simulations]
+      summary: Calculate and persist a SaaS billing simulation
+      description: |
+        Computes monthly cost in EUR from:
+        `Plan Fixed Price + Users Tiered Cost + Extra Storage Progressive Cost + Extra API Progressive Cost`,
+        applies the customer's country VAT/Tax rate, and stores an immutable snapshot in SQLite.
+        Rejects over-limit usage with `422` when effective `overage_policy` is `HARD_CAP`.
+      operationId: createSimulation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulationCreateRequest'
+            examples:
+              starterWith15UsersWithinLimits:
+                summary: Starter plan, 15 users, within 25GB and 100k API limits
+                value:
+                  customer_id: 1
+                  active_users: 15
+                  storage_gb: 20
+                  estimated_api_calls: 80000
+              starterProgressiveOverage:
+                summary: Starter plan with progressive storage and API overages
+                value:
+                  customer_id: 1
+                  active_users: 15
+                  storage_gb: 85
+                  estimated_api_calls: 250000
+                  overage_policy: PROGRESSIVE
+      responses:
+        '201':
+          description: Simulation calculated and persisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationResponse'
+        '404':
+          description: Referenced customer_id does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Input validation error or plan threshold exceeded under HARD_CAP policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                hardCapExceeded:
+                  summary: Storage or API limit exceeded in HARD_CAP mode
+                  value:
+                    code: PLAN_LIMIT_EXCEEDED
+                    message: El consumo solicitado supera los límites del plan STARTER bajo política HARD_CAP.
+                    details:
+                      included_storage_gb: 25
+                      requested_storage_gb: 40
+                      included_api_calls: 100000
+                      requested_api_calls: 100000
+
+components:
+  parameters:
+    CustomerIdPath:
+      name: customer_id
+      in: path
+      required: true
+      description: Unique integer identifier of the customer.
+      schema:
+        type: integer
+        minimum: 1
+
+  schemas:
+    PlanCode:
+      type: string
+      enum: [STARTER, PRO, ENTERPRISE]
+      description: Subscription plan tier.
+
+    OveragePolicy:
+      type: string
+      enum: [PROGRESSIVE, HARD_CAP]
+      description: |
+        Behavior when storage_gb or estimated_api_calls exceed plan included thresholds:
+        - PROGRESSIVE: Escalating tiered overage charges apply.
+        - HARD_CAP: Exceeding thresholds is rejected.
+
+    HealthResponse:
+      type: object
+      required: [status, database]
+      properties:
+        status:
+          type: string
+          example: ok
+        database:
+          type: string
+          example: connected
+
+    CountryInfo:
+      type: object
+      required: [country_code, name, tax_rate_percent, strict_tax_id_validation]
+      properties:
+        country_code:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          example: ES
+        name:
+          type: string
+          example: España
+        tax_rate_percent:
+          type: number
+          format: double
+          example: 21.0
+        strict_tax_id_validation:
+          type: boolean
+          example: true
+
+    PlanInfo:
+      type: object
+      required: [code, name, fixed_monthly_eur, included_storage_gb, included_api_calls]
+      properties:
+        code:
+          $ref: '#/components/schemas/PlanCode'
+        name:
+          type: string
+          example: Plan Base / Starter
+        fixed_monthly_eur:
+          type: number
+          format: double
+          example: 29.0
+        included_storage_gb:
+          type: integer
+          example: 25
+        included_api_calls:
+          type: integer
+          example: 100000
+
+    CustomerCreateRequest:
+      type: object
+      required: [company_name, tax_id, contact_email, country_code, plan]
+      properties:
+        company_name:
+          type: string
+          minLength: 2
+          maxLength: 150
+          example: Acme Iberia S.L.
+        tax_id:
+          type: string
+          minLength: 5
+          maxLength: 20
+          description: Corporate or personal tax ID (validated strictly for ES).
+          example: B58818501
+        contact_email:
+          type: string
+          format: email
+          maxLength: 254
+          example: billing@acme.es
+        country_code:
+          type: string
+          pattern: '^[A-Za-z]{2}$'
+          description: ISO 3166-1 alpha-2 country code.
+          example: ES
+        plan:
+          $ref: '#/components/schemas/PlanCode'
+        overage_policy:
+          $ref: '#/components/schemas/OveragePolicy'
+          default: PROGRESSIVE
+
+    CustomerResponse:
+      type: object
+      required:
+        - id
+        - company_name
+        - tax_id
+        - contact_email
+        - country_code
+        - country_name
+        - tax_rate_percent
+        - plan
+        - overage_policy
+        - created_at
+      properties:
+        id:
+          type: integer
+          example: 1
+        company_name:
+          type: string
+          example: Acme Iberia S.L.
+        tax_id:
+          type: string
+          example: B58818501
+        contact_email:
+          type: string
+          format: email
+          example: billing@acme.es
+        country_code:
+          type: string
+          example: ES
+        country_name:
+          type: string
+          example: España
+        tax_rate_percent:
+          type: number
+          format: double
+          example: 21.0
+        plan:
+          $ref: '#/components/schemas/PlanCode'
+        overage_policy:
+          $ref: '#/components/schemas/OveragePolicy'
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-11-12T14:20:00Z'
+
+    CustomerListResponse:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerResponse'
+        total:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          example: 0
+
+    SimulationCreateRequest:
+      type: object
+      required: [customer_id, active_users, storage_gb, estimated_api_calls]
+      properties:
+        customer_id:
+          type: integer
+          minimum: 1
+          example: 1
+        active_users:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          example: 15
+        storage_gb:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          example: 85
+        estimated_api_calls:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+          example: 250000
+        overage_policy:
+          $ref: '#/components/schemas/OveragePolicy'
+          description: Optional per-simulation override. Defaults to the customer's configured overage_policy.
+
+    SimulationBreakdown:
+      type: object
+      required:
+        - plan_fixed_eur
+        - users_cost_eur
+        - extra_storage_gb
+        - extra_storage_cost_eur
+        - extra_api_calls
+        - extra_api_cost_eur
+        - subtotal_eur
+        - tax_rate_percent
+        - tax_amount_eur
+        - total_eur
+      properties:
+        plan_fixed_eur:
+          type: number
+          format: double
+          example: 29.0
+        users_cost_eur:
+          type: number
+          format: double
+          example: 140.0
+        extra_storage_gb:
+          type: integer
+          example: 60
+        extra_storage_cost_eur:
+          type: number
+          format: double
+          example: 33.0
+        extra_api_calls:
+          type: integer
+          example: 150000
+        extra_api_cost_eur:
+          type: number
+          format: double
+          example: 9.0
+        subtotal_eur:
+          type: number
+          format: double
+          example: 211.0
+        tax_rate_percent:
+          type: number
+          format: double
+          example: 21.0
+        tax_amount_eur:
+          type: number
+          format: double
+          example: 44.31
+        total_eur:
+          type: number
+          format: double
+          example: 255.31
+
+    SimulationResponse:
+      type: object
+      required:
+        - id
+        - customer_id
+        - currency
+        - plan_applied
+        - overage_policy_applied
+        - active_users
+        - storage_gb
+        - estimated_api_calls
+        - breakdown
+        - created_at
+      properties:
+        id:
+          type: integer
+          example: 10
+        customer_id:
+          type: integer
+          example: 1
+        currency:
+          type: string
+          enum: [EUR]
+          example: EUR
+        plan_applied:
+          $ref: '#/components/schemas/PlanCode'
+        overage_policy_applied:
+          $ref: '#/components/schemas/OveragePolicy'
+        active_users:
+          type: integer
+          example: 15
+        storage_gb:
+          type: integer
+          example: 85
+        estimated_api_calls:
+          type: integer
+          example: 250000
+        breakdown:
+          $ref: '#/components/schemas/SimulationBreakdown'
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-11-12T14:25:00Z'
+
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: Validation failed for one or more fields.
+        details:
+          type: object
+          additionalProperties: true
+

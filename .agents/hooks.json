@@ -1,0 +1,17 @@
+{
+  "require-file-write-approval": {
+    "PreToolUse": [
+      {
+        "matcher": "write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ./hooks/ask_file_write.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+
