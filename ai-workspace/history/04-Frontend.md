@@ -110,3 +110,6 @@ Prepare an implementation plan for the following frontend changes :
 - in the customer view, propose different ways of accesing to the simulation part, currently is all in the same screen and it's not clear to the user how to use it
 - Remove the top bottons in the customer view Configuracion, Resumend and Historial
 - Replace Historial de Simulaciones Guardadas por Historial de Simulaciones
+
+# RESPONSE 
+  Plan in : saas_o_matic\ai-workspace\03-plans\frontend-ux-refinement-plan.md
