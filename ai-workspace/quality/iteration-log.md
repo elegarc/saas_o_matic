@@ -92,5 +92,6 @@ En lugar de trabajar con prompts aislados o mezclar especificaciones con reglas 
 * **Referencia:** [code-audits.md](./code-audits.md) y [taskReport.md](./taskReport.md)
 * **Cómo se prompteó:**
   * Contraste sistemático de todo lo construido frente a los criterios de [task.md](../../task.md) para detectar posibles huecos técnicos o documentales antes de la entrega final.
+  * Solicitud explícita de enriquecer el `README.md` con diagramas de arquitectura (backend, frontend y flujo completo extremo a extremo).
 * **Resultado:**
-  * Consolidación de salidas reales de pruebas (`57 passed` en backend, `32 SUCCESS` en frontend, `ruff` y `ng build` limpios), commits atómicos por capa en Git y cierre de trazabilidad en `ai-workspace/quality/`.
+  * Consolidación de salidas reales de pruebas (`57 passed` en backend, `32 SUCCESS` en frontend, `ruff` y `ng build` limpios), diagramas Mermaid integrados en `README.md`, commits atómicos por capa en Git y cierre de trazabilidad en `ai-workspace/quality/`.
