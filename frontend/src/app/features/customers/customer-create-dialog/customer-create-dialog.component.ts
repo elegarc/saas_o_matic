@@ -27,59 +27,11 @@ import { MatSelectModule } from '@angular/material/select';
 import { CountryInfo, OveragePolicy, PlanCode, PlanInfo } from '../../../core/models/catalog.model';
 import { CatalogApiService } from '../../../core/services/catalog-api.service';
 import { CustomerApiService } from '../../../core/services/customer-api.service';
+import {
+  isValidGenericTaxId,
+  isValidSpanishTaxId,
+} from '../../../core/utils/tax-id-validator';
 import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
-
-// Spanish Tax ID algorithms mirroring backend exactly
-const DNI_TABLE = 'TRWAGMYFPDXBNJZSQVHLCKE';
-const NIE_MAP: Record<string, string> = { X: '0', Y: '1', Z: '2' };
-const CIF_LETTERS = 'JABCDEFGHI';
-
-function isValidSpanishTaxId(raw: string): boolean {
-  const cleaned = raw.replace(/[\s.-]+/g, '').toUpperCase();
-  if (cleaned.length !== 9) {
-    return false;
-  }
-
-  // DNI
-  if (/^[0-9]{8}[A-Z]$/.test(cleaned)) {
-    const num = parseInt(cleaned.slice(0, 8), 10);
-    return cleaned[8] === DNI_TABLE[num % 23];
-  }
-
-  // NIE
-  if (/^[XYZ][0-9]{7}[A-Z]$/.test(cleaned)) {
-    const prefix = NIE_MAP[cleaned[0]];
-    const num = parseInt(prefix + cleaned.slice(1, 8), 10);
-    return cleaned[8] === DNI_TABLE[num % 23];
-  }
-
-  // CIF
-  if (/^[ABCDEFGHJNPQRSUVW][0-9]{7}[0-9A-J]$/.test(cleaned)) {
-    const prefix = cleaned[0];
-    const digits = cleaned.slice(1, 8).split('').map(Number);
-    const controlChar = cleaned[8];
-
-    const evenSum = digits[1] + digits[3] + digits[5];
-    let oddSum = 0;
-    for (const idx of [0, 2, 4, 6]) {
-      const doubled = digits[idx] * 2;
-      oddSum += Math.floor(doubled / 10) + (doubled % 10);
-    }
-    const controlDigit = (10 - ((evenSum + oddSum) % 10)) % 10;
-    const expDigit = controlDigit.toString();
-    const expLetter = CIF_LETTERS[controlDigit];
-
-    if ('ABEH'.includes(prefix)) {
-      return controlChar === expDigit;
-    }
-    if ('PQRSNW'.includes(prefix)) {
-      return controlChar === expLetter;
-    }
-    return controlChar === expDigit || controlChar === expLetter;
-  }
-
-  return false;
-}
 
 @Component({
   selector: 'app-customer-create-dialog',
@@ -386,8 +338,7 @@ export class CustomerCreateDialogComponent implements OnInit {
     if (country === 'ES') {
       return isValidSpanishTaxId(val) ? null : { invalidSpanishTaxId: true };
     }
-    const cleaned = val.replace(/[\s.-]+/g, '');
-    return /^[A-Za-z0-9]{5,20}$/.test(cleaned) ? null : { invalidTaxId: true };
+    return isValidGenericTaxId(val) ? null : { invalidTaxId: true };
   }
 
   handleCloseAttempt(): void {

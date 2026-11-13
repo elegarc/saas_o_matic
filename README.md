@@ -2,6 +2,9 @@
 
 Dynamic multi-currency SaaS billing & subscription optimizer for corporate sales teams, built with **FastAPI + SQLite** and **Angular 19 + Angular Material**.
 
+> **Live Demo (GitHub Pages):** **[https://elegarc.github.io/saas_o_matic/](https://elegarc.github.io/saas_o_matic/)**
+> Deployed automatically as an interactive static demo (`--configuration=github-pages`). All `/api/v1/*` calls run against an in-browser mock API backed by `localStorage` with pre-seeded B2B clients, real DNI/NIE/CIF validation, real tiered/overage pricing calculations, and live EUR exchange rates from `open.er-api.com`. Use the **"Restablecer datos demo"** banner action at any time to restore the initial seed data.
+
 ---
 
 ## Table of Contents
@@ -55,6 +58,14 @@ npm install
 npm start
 ```
 * Open `http://localhost:4200` in your browser (`proxy.conf.json` forwards `/api/*` calls to port `8000`).
+
+### Static Demo Build (GitHub Pages)
+To test the browser-only static demo build locally:
+```powershell
+cd frontend
+npm run build:gh-pages
+```
+* Built via [`.github/workflows/deploy-gh-pages.yml`](.github/workflows/deploy-gh-pages.yml) on every push to `main`.
 
 ---
 

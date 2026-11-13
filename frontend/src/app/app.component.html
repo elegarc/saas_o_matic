@@ -23,6 +23,18 @@
     </div>
   </mat-toolbar>
 
+  <!-- Static Demo Mode Notice (GitHub Pages) -->
+  @if (isDemoMode) {
+    <div class="global-banner-wrapper">
+      <app-status-banner
+        type="info"
+        message="Modo Demostración interactivo: los clientes y simulaciones se guardan localmente en tu navegador (localStorage)."
+        actionLabel="Restablecer datos demo"
+        (actionClick)="onResetDemoData()"
+      ></app-status-banner>
+    </div>
+  }
+
   <!-- Global Currency Fallback Alert Banner (if cached or offline) -->
   @if (currencyState() === 'cached_fallback') {
     <div class="global-banner-wrapper">

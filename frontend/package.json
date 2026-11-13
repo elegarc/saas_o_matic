@@ -5,6 +5,7 @@
     "ng": "ng",
     "start": "ng serve --proxy-config proxy.conf.json",
     "build": "ng build",
+    "build:gh-pages": "ng build --configuration=github-pages --base-href=/saas_o_matic/",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },
