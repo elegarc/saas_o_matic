@@ -1,0 +1,59 @@
+<div class="app-layout">
+  <!-- Top Navigation Bar -->
+  <mat-toolbar class="main-toolbar">
+    <div class="toolbar-content">
+      <a routerLink="/customers" class="brand-link">
+        <mat-icon class="brand-icon">auto_graph</mat-icon>
+        <div class="brand-text">
+          <span class="brand-title">SaaS-O-Matic</span>
+          <span class="brand-subtitle">Optimizador Comercial de Facturación</span>
+        </div>
+      </a>
+
+      <div class="toolbar-actions">
+        <app-currency-selector
+          [currencies]="currencies"
+          [selectedCurrency]="activeCurrency()"
+          [state]="currencyState()"
+          [lastUpdated]="lastUpdated()"
+          (currencyChange)="onCurrencyChange($event)"
+          (retryClick)="onRetryCurrency()"
+        ></app-currency-selector>
+      </div>
+    </div>
+  </mat-toolbar>
+
+  <!-- Global Currency Fallback Alert Banner (if cached or offline) -->
+  @if (currencyState() === 'cached_fallback') {
+    <div class="global-banner-wrapper">
+      <app-status-banner
+        type="warning"
+        message="Sin conexión en vivo con open.er-api.com. Mostrando tipos de cambio guardados en caché local."
+        actionLabel="Reintentar"
+        (actionClick)="onRetryCurrency()"
+      ></app-status-banner>
+    </div>
+  } @else if (currencyState() === 'offline_eur_only') {
+    <div class="global-banner-wrapper">
+      <app-status-banner
+        type="error"
+        message="No se pudo conectar con el servicio de divisas y no hay caché disponible. Visualización fijada en EUR."
+        actionLabel="Reintentar"
+        (actionClick)="onRetryCurrency()"
+      ></app-status-banner>
+    </div>
+  }
+
+  <!-- Main View Content -->
+  <main class="main-content">
+    <router-outlet></router-outlet>
+  </main>
+
+  <!-- Minimal Neutral Footer -->
+  <footer class="app-footer">
+    <div class="footer-content">
+      <span>SaaS-O-Matic © 2026 — Herramienta interna de optimización de suscripciones multi-divisa.</span>
+      <span class="footer-note">Cálculo de facturación gradual autoritativo en EUR (almacenamiento en SQLite).</span>
+    </div>
+  </footer>
+</div>
